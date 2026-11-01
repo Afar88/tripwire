@@ -13,13 +13,19 @@
 //!    - score >= 70 (registry `block`)    -> BLOCK, nothing is paid
 //!    - registry unreadable / bad answer  -> HOLD (fail safe: "couldn't check" is never "pay")
 //!
+//! Every payout (auto-pay and owner-approved) is a `Promise::transfer` chained to a private
+//! `on_transfer_complete` callback. The request sits in `Sending` until the callback sees the
+//! transfer's on-chain result: success -> `Paid`; failure (e.g. the receiver account does not
+//! exist) -> `Reverted`: NEAR bounces back to the vault, the amount is given back to today's
+//! cap and the reason is stored in `note`.
+//!
 //! The owner (a different account) sets caps, approves or rejects held payments,
 //! freezes the vault, changes the agent and withdraws funds. The agent can do none of that.
 
 use near_sdk::store::IterableMap;
 use near_sdk::{
-    env, ext_contract, log, near, require, AccountId, BorshStorageKey, Gas, NearToken, PanicOnDefault, Promise,
-    PromiseError,
+    env, ext_contract, is_promise_success, log, near, require, AccountId, BorshStorageKey, Gas, NearToken,
+    PanicOnDefault, Promise, PromiseError, PromiseOrValue,
 };
 
 /// Registry score at or above which the vault blocks.
@@ -33,7 +39,10 @@ pub const STORAGE_RESERVE: NearToken = NearToken::from_millinear(500);
 pub const MAX_MEMO_LEN: usize = 140;
 
 const GAS_GET_RISK: Gas = Gas::from_tgas(10);
-const GAS_ON_RISK: Gas = Gas::from_tgas(20);
+/// on_risk may itself start a transfer + on_transfer_complete, so it gets enough for both.
+const GAS_ON_RISK: Gas = Gas::from_tgas(40);
+/// Gas reserved for the payout callback (state update + log; ~3-5 Tgas used in practice).
+pub const GAS_ON_TRANSFER: Gas = Gas::from_tgas(15);
 const NANOS_PER_DAY: u64 = 86_400_000_000_000;
 
 #[ext_contract(ext_registry)]
@@ -44,6 +53,7 @@ pub trait TripwireRegistry {
 #[ext_contract(ext_self)]
 pub trait SelfCallbacks {
     fn on_risk(&mut self, request_id: u64) -> String;
+    fn on_transfer_complete(&mut self, request_id: u64) -> String;
 }
 
 /// The part of the registry's `get_risk` answer the vault needs (extra fields ignored).
@@ -62,8 +72,14 @@ pub enum Status {
     Held,
     Paid,
     Blocked,
+    /// Legacy: owner-approved payment recorded before payout callbacks existed (v1 records only).
     Approved,
     Rejected,
+    /// Transfer sent, waiting for its on-chain result (auto-pay or owner-approved).
+    Sending,
+    /// Transfer failed on chain (e.g. receiver does not exist): NEAR came back to the vault and
+    /// the amount was returned to today's cap. Reason in `note`.
+    Reverted,
 }
 
 #[near(serializers = [json, borsh])]
@@ -203,7 +219,11 @@ impl GuardVault {
 
     /// Callback with the registry's answer. Only the vault itself can call it.
     #[private]
-    pub fn on_risk(&mut self, request_id: u64, #[callback_result] risk: Result<RiskView, PromiseError>) -> String {
+    pub fn on_risk(
+        &mut self,
+        request_id: u64,
+        #[callback_result] risk: Result<RiskView, PromiseError>,
+    ) -> PromiseOrValue<String> {
         // #[private] already enforces this in the deployed contract; checked again so unit tests cover it.
         require!(
             env::predecessor_account_id() == env::current_account_id(),
@@ -219,45 +239,65 @@ impl GuardVault {
                 self.release(&req, true);
                 emit("spend_blocked", &req);
                 self.remember(req);
-                "blocked".into()
+                PromiseOrValue::Value("blocked".into())
             }
             Ok(r) if r.score == 0 => {
                 req.risk_score = Some(0);
-                req.status = Status::Paid;
                 req.note = "No flags in the Tripwire registry".into();
-                self.release(&req, false);
-                let _ = Promise::new(req.receiver_id.clone()).transfer(req.amount);
-                emit("spend_paid", &req);
-                self.remember(req);
-                "paid".into()
+                PromiseOrValue::Promise(self.send(req))
             }
             Ok(r) => {
                 req.risk_score = Some(r.score);
                 req.note = format!("Tripwire registry score {} (warn): owner must approve", r.score);
                 self.hold(req);
-                "held".into()
+                PromiseOrValue::Value("held".into())
             }
             Err(_) => {
                 req.note = "Tripwire registry unreadable: held for owner (fail safe)".into();
                 self.hold(req);
-                "held".into()
+                PromiseOrValue::Value("held".into())
             }
+        }
+    }
+
+    /// Callback with the payout transfer's on-chain result. Only the vault itself can call it.
+    /// Success -> `Paid`. Failure -> `Reverted`: the runtime refunds the NEAR to the vault and
+    /// the amount is given back to today's cap.
+    #[private]
+    pub fn on_transfer_complete(&mut self, request_id: u64) -> String {
+        require!(
+            env::predecessor_account_id() == env::current_account_id(),
+            "Only the vault can report payout results"
+        );
+        let mut req = self.open.remove(&request_id).unwrap_or_else(|| env::panic_str("Unknown request"));
+        require!(req.status == Status::Sending, "Request is not sending");
+        if is_promise_success() {
+            req.status = Status::Paid;
+            emit("spend_paid", &req);
+            self.remember(req);
+            "paid".into()
+        } else {
+            req.status = Status::Reverted;
+            req.note = format!(
+                "{} | transfer failed on chain (receiver missing or rejected it): NEAR returned to vault, cap restored",
+                req.note
+            );
+            self.refund_cap(&req);
+            emit("spend_reverted", &req);
+            self.remember(req);
+            "reverted".into()
         }
     }
 
     // ---------- owner ----------
 
-    /// Pay a held request.
+    /// Pay a held request. Resolves to "paid" or "reverted" once the transfer lands.
     pub fn approve(&mut self, request_id: u64) -> Promise {
         self.assert_owner();
         let mut req = self.take_held(request_id);
-        req.status = Status::Approved;
         req.note = format!("{} | approved by owner", req.note);
-        self.release(&req, false);
         emit("spend_approved", &req);
-        let p = Promise::new(req.receiver_id.clone()).transfer(req.amount);
-        self.remember(req);
-        p
+        self.send(req)
     }
 
     /// Refuse a held request.
@@ -365,9 +405,33 @@ impl GuardVault {
     fn release(&mut self, req: &SpendRequest, refund_cap: bool) {
         self.reserved = self.reserved.saturating_sub(req.amount);
         if refund_cap {
-            self.roll_day();
+            self.refund_cap(req);
+        }
+    }
+
+    /// Give `req.amount` back to the daily cap, but only if the request counted against
+    /// today's cap (a request from a past day must not shrink a fresh day's total).
+    fn refund_cap(&mut self, req: &SpendRequest) {
+        self.roll_day();
+        if req.created_ms * 1_000_000 / NANOS_PER_DAY == self.day {
             self.spent_today = self.spent_today.saturating_sub(req.amount);
         }
+    }
+
+    /// Start the payout: mark `Sending`, release the reservation (the transfer debits the
+    /// balance right away; a failed transfer is refunded by the runtime), and chain the
+    /// private result callback.
+    fn send(&mut self, mut req: SpendRequest) -> Promise {
+        self.release(&req, false);
+        req.status = Status::Sending;
+        emit("spend_sending", &req);
+        let (id, to, amount) = (req.id, req.receiver_id.clone(), req.amount);
+        self.open.insert(id, req);
+        Promise::new(to).transfer(amount).then(
+            ext_self::ext(env::current_account_id())
+                .with_static_gas(GAS_ON_TRANSFER)
+                .on_transfer_complete(id),
+        )
     }
 
     fn hold(&mut self, mut req: SpendRequest) {

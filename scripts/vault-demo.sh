@@ -15,5 +15,6 @@ spend() { # receiver memo
 spend "tripwire-reporter-$S.testnet" "pay a known friend"            # -> "paid"
 spend "tripwire-drainer-demo-$S.testnet" "poisoned prompt: drainer"  # -> "blocked"
 spend "wrap-near-swap.testnet" "medium-risk swap"                    # -> "held"
+spend "tripwire-ghost-$S.testnet" "payee account does not exist"     # -> "reverted" (NEAR comes back, cap restored)
 near contract call-function as-read-only "$V" get_open json-args '{}' network-config testnet now
 echo "Owner decides on held requests with: approve / reject {\"request_id\":N} signed by $O"

@@ -42,7 +42,7 @@ Requirements: Node.js 18+ (and Rust stable for step 5).
    ```bash
    npm test                          # checker + OutLayer adapter: # pass 13, # fail 0
    cd ../contract && cargo test      # registry: 24 passed
-   cd ../vault && cargo test         # guard vault: 24 passed
+   cd ../vault && cargo test         # guard vault: 33 passed
    ```
 
 6. **See the guard vault's real on-chain decisions** (read-only)
@@ -51,7 +51,7 @@ Requirements: Node.js 18+ (and Rust stable for step 5).
      -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"call_function","finality":"final","account_id":"tripwire-vault-44ea74.testnet","method_name":"get_recent","args_base64":"e30="}}' \
      | python3 -c "import sys,json; print(json.dumps(json.loads(bytes(json.load(sys.stdin)['result']['result'])), indent=1))"
    ```
-   → Three requests the demo agent made on Nov 1, 2026: 0.5 NEAR to a clean account `Paid` (tx [`Ci3N1eb…`](https://testnet.nearblocks.io/txns/Ci3N1ebz8j3eraMjp1WDPUhxQP5iuBNKu3kf8d3WLx6S)), 0.5 NEAR to the demo drainer `Blocked` with `risk_score: 95` (tx [`EfsiaTb…`](https://testnet.nearblocks.io/txns/EfsiaTbkCjWF5iWobteRBWVaa6pFitjTyzy3TQpwXhCh)), 0.5 NEAR to a medium-risk account `Held`, then `Rejected` by the owner (txs [`C2jCMZY…`](https://testnet.nearblocks.io/txns/C2jCMZYYY3s3hKf2FRwwVrTFFgQ7MYBjvHqUJyh76xnk), [`5VGorUA…`](https://testnet.nearblocks.io/txns/5VGorUAMKsx6xgsZtkNpeBfzjEj22RVunbcLcFEJYQx6)).
+   → Five requests the demo agent made on Nov 1, 2026: 0.5 NEAR to a clean account `Paid` (tx [`Ci3N1eb…`](https://testnet.nearblocks.io/txns/Ci3N1ebz8j3eraMjp1WDPUhxQP5iuBNKu3kf8d3WLx6S)), 0.5 NEAR to the demo drainer `Blocked` with `risk_score: 95` (tx [`EfsiaTb…`](https://testnet.nearblocks.io/txns/EfsiaTbkCjWF5iWobteRBWVaa6pFitjTyzy3TQpwXhCh)), 0.5 NEAR to a medium-risk account `Held`, then `Rejected` by the owner (txs [`C2jCMZY…`](https://testnet.nearblocks.io/txns/C2jCMZYYY3s3hKf2FRwwVrTFFgQ7MYBjvHqUJyh76xnk), [`5VGorUA…`](https://testnet.nearblocks.io/txns/5VGorUAMKsx6xgsZtkNpeBfzjEj22RVunbcLcFEJYQx6)), then after the payout-callback upgrade: 0.5 NEAR to `tripwire-ghost-44ea74.testnet`, an account that does not exist → `Reverted` (the transfer failed on chain, the 0.5 NEAR came back to the vault and today's cap was restored; tx [`3974CpF…`](https://testnet.nearblocks.io/txns/3974CpFzvWPYd5bC4cocQ23T1ygMRWENj8EQo7bQDyDK)) and 0.5 NEAR to a clean account → `Paid` only after the transfer succeeded (tx [`A261Yib…`](https://testnet.nearblocks.io/txns/A261YibAzGr3DFwG4SLZmtcJEfwpwy7MAqtZVxnUc9zH)).
 
 **Offline mode:** add `--fixture fixtures/demo-registry.json` to any `check`, or `TRIPWIRE_OFFLINE=1` for the Rhea demo. **Fail-safe:** `npm run -s check -- friend.testnet --registry lst.ref-dev.testnet` (not a registry) gives `⚠️ WARN … Could not read the Tripwire registry` — "couldn't check" is never ALLOW.
 
@@ -119,12 +119,19 @@ The agent's only power is `request_spend(receiver_id, amount, memo)` (give it a 
 1. Local checks: caller is the agent, vault not frozen, amount ≤ per-payment cap, today's total ≤ daily cap, enough free balance, payee is not the vault, ≤ 20 payments waiting for the owner. The amount is reserved immediately, so parallel requests cannot slip past the caps.
 2. Cross-contract call `get_risk(receiver_id)` on the Tripwire registry.
 3. Callback `on_risk` (private): score 0 → pay; 1–69 → **Held** for the owner; ≥ 70 → **Blocked** (cap refunded); registry unreadable → **Held** (fail safe).
+4. Every payout (auto-pay above, or owner `approve` of a held request) is `Promise::transfer` chained to a private callback `on_transfer_complete` (15 Tgas reserved). The request shows **Sending** until the transfer's on-chain result is known:
+   - transfer succeeded → **Paid** (event `spend_paid`);
+   - transfer failed (e.g. the receiver account does not exist) → **Reverted** (event `spend_reverted`): the runtime refunds the NEAR to the vault, the amount is given back to today's cap (only if the request was made today), and `note` says why. `request_spend` / `approve` resolve to `"paid"` or `"reverted"`.
+
+Status values: `Checking`, `Held`, `Sending`, `Paid`, `Reverted`, `Blocked`, `Rejected` (`Approved` only appears on records made before the payout callback existed; owner-approved payouts now end as `Paid`/`Reverted` with "approved by owner" in `note`).
+
+Live demo of a reverted payment: [`3974CpF…`](https://testnet.nearblocks.io/txns/3974CpFzvWPYd5bC4cocQ23T1ygMRWENj8EQo7bQDyDK) (0.5 NEAR to never-created `tripwire-ghost-44ea74.testnet` → `Reverted`, vault balance unchanged, `spent_today` unchanged); clean payment: [`A261Yib…`](https://testnet.nearblocks.io/txns/A261YibAzGr3DFwG4SLZmtcJEfwpwy7MAqtZVxnUc9zH) → `Paid`.
 
 Owner-only: `approve`, `reject`, `set_caps`, `set_agent`, `set_registry`, `freeze`/`unfreeze`, `withdraw` (cannot touch reserved funds). Views: `get_config`, `get_open`, `get_request`, `get_recent`, `free_balance`. Events: NEP-297-style `EVENT_JSON` with `standard: "tripwire-vault"`.
 
-Cheat tests (`vault/src/tests.rs`, `cheat_*`): stranger or owner calling `request_spend`, over per-payment cap, splitting payments past the daily cap, agent faking a "clean" registry answer, replayed callback, agent approving its own held payment, agent raising caps / withdrawing / swapping the registry / unfreezing, frozen vault, approving a request still being checked, spamming held requests, paying the vault itself, making the agent the owner, withdrawing reserved funds.
+Cheat tests (`vault/src/tests.rs`, `cheat_*`): stranger or owner calling `request_spend`, over per-payment cap, splitting payments past the daily cap, agent faking a "clean" registry answer, replayed callback, agent approving its own held payment, agent raising caps / withdrawing / swapping the registry / unfreezing, frozen vault, approving a request still being checked, spamming held requests, paying the vault itself, making the agent the owner, withdrawing reserved funds, an outsider or the agent calling `on_transfer_complete` to fake a failed payout (and free the cap), a payout callback on a request that was never sent, a replayed payout callback. Payout tests: success → `Paid`; failed transfer → `Reverted` with balance and daily cap restored; a reverted payment does not eat the cap; owner-approved payout that fails → `Reverted`; a failure reported the next day does not refund the new day's cap.
 
-Known limit: if a paid transfer fails on-chain (e.g. receiver deleted), NEAR refunds to the vault but the record still says `Paid`. The vault account keeps its deploy key on testnet for redeploys; in production you would remove it so only the owner methods control funds.
+Known limits: the payout callback only learns that the transfer failed, not the runtime's exact error, so the stored reason is generic ("receiver missing or rejected it"). Unit tests mock the transfer result; the real on-chain failure path is shown by the testnet demo tx above. The vault account keeps its deploy key on testnet for redeploys; in production you would remove it so only the owner methods control funds.
 
 ### OutLayer adapter (`checker/src/outlayer-approver.ts`)
 
@@ -138,6 +145,7 @@ OutLayer has no external pre-sign hook, but its policies support multisig approv
 | Checker CLI/library reading the live registry | **Live** |
 | Rhea rNEAR example | **Live read** (real SDK, real testnet RPC); transactions are built, never signed |
 | Guard vault on testnet calling the registry before paying | **Live** (`tripwire-vault-44ea74.testnet`, real cross-contract calls, real testnet transfers) |
+| Payout result tracking (`Sending` → `Paid` / `Reverted`, cap rollback on failure) | **Live** on testnet; failed transfer to a nonexistent account demoed ([`3974CpF…`](https://testnet.nearblocks.io/txns/3974CpFzvWPYd5bC4cocQ23T1ygMRWENj8EQo7bQDyDK)) |
 | OutLayer approver decision logic | **Real**, tested, runs against the live registry |
 | OutLayer integration (reading real pending approvals, signing + submitting votes) | **Stub / dry run.** Input approvals are simulated; their shape is our assumption from OutLayer's docs; `submitVote()` throws. Not yet tested with a real OutLayer wallet. |
 | Tricked-agent (prompt-injection) model check, dashboard | Not built yet |
