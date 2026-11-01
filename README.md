@@ -12,7 +12,7 @@ Tripwire is **live on NEAR testnet**. Nothing below needs a wallet, a key or any
 | Demo agent / owner | `tripwire-agent-44ea74.testnet` / `tripwire-owner-44ea74.testnet` | |
 | Demo "drainer" (test data) | `tripwire-drainer-demo-44ea74.testnet` | |
 
-**Demo video (66 s, narrated, real runs against testnet):** [`docs/tripwire-demo.mp4`](docs/tripwire-demo.mp4)
+**Demo video (71 s, narrated, real runs against testnet; why caps alone are not enough):** [`docs/tripwire-demo.mp4`](docs/tripwire-demo.mp4)
 
 Requirements: Node.js 18+ (and Rust stable for the cargo tests in step 6).
 
