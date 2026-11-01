@@ -10,7 +10,9 @@ Tripwire is **live on NEAR testnet**. Nothing below needs a wallet, a key or any
 | Demo agent / owner | `tripwire-agent-44ea74.testnet` / `tripwire-owner-44ea74.testnet` | |
 | Demo "drainer" (test data) | `tripwire-drainer-demo-44ea74.testnet` | |
 
-Requirements: Node.js 18+ (and Rust stable for step 5).
+**Demo video (70 s, real runs against testnet):** [`docs/tripwire-demo.mp4`](docs/tripwire-demo.mp4)
+
+Requirements: Node.js 18+ (and Rust stable for the cargo tests in step 6).
 
 1. **Ask the live registry about a known-bad account**
    ```bash
@@ -88,11 +90,12 @@ export TRIPWIRE_REGISTRY=tripwire-registry-<suffix>.testnet
 
 Tripwire is a wallet-agnostic scam / risk registry and checker for NEAR. Before an AI agent or a wallet sends funds to an account or calls a contract, it asks Tripwire, and gets back **ALLOW**, **WARN** or **BLOCK** with plain-English reasons.
 
-It has three parts:
+It has three parts, plus an optional AI layer:
 
 - **Registry contract** (Rust, `contract/`): an on-chain list of flagged accounts. Anyone can call `get_risk(account_id)`; trusted reporters file flags with a category, severity, reason, evidence URL and timestamp; the owner manages reporters and moderates.
 - **Guard vault** (Rust, `vault/`): a tiny wallet contract for an AI agent. The agent can only call `request_spend`; the vault checks caps and asks the registry before any NEAR leaves.
 - **Checker** (TypeScript, `checker/`): a library + CLI that reads the registry over public NEAR RPC, adds local signals (lookalike names, account does not exist), and returns a verdict. `checkTransaction()` checks every account a transaction touches (its receiver plus `receiver_id`/`account_id`-style arguments) before it is signed.
+- **NEAR AI second opinion** (optional, `checker/src/nearai.ts`): with `--ai --purpose "<why this payment>"`, NEAR AI Cloud reads the payment's stated purpose for scam patterns (pay-a-fee-to-claim, fake support, "send X get 2X") and explains the verdict in one line. It can only raise ALLOW → WARN, never lower a verdict.
 
 ## The problem
 
