@@ -1,0 +1,12 @@
+{
+  "_note": "SIMULATED OutLayer pending approvals for a dry run. Shape is our assumption, not a captured OutLayer response.",
+  "approvals": [
+    { "approval_id": "sim-1", "wallet_pubkey": "ed25519:SIMULATED", "request_hash": "sim-hash-1",
+      "op": { "type": "transfer", "receiver_id": "tripwire-reporter-44ea74.testnet", "amount": "500000000000000000000000" } },
+    { "approval_id": "sim-2", "wallet_pubkey": "ed25519:SIMULATED", "request_hash": "sim-hash-2",
+      "op": { "type": "transfer", "receiver_id": "tripwire-drainer-demo-44ea74.testnet", "amount": "5000000000000000000000000" } },
+    { "approval_id": "sim-3", "wallet_pubkey": "ed25519:SIMULATED", "request_hash": "sim-hash-3",
+      "op": { "type": "call", "receiver_id": "wrap.testnet", "method": "ft_transfer",
+              "args": { "receiver_id": "wrap-near-swap.testnet", "amount": "1000000000000000000000000" } } }
+  ]
+}

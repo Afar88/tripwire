@@ -7,7 +7,8 @@
     "check": "tsx src/cli.ts check",
     "demo:rhea": "tsx examples/rhea-stake.ts",
     "test": "tsx --test test/*.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "demo:outlayer": "tsx examples/outlayer-approver-dryrun.ts"
   },
   "license": "MIT",
   "dependencies": {
