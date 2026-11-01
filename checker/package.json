@@ -1,0 +1,27 @@
+{
+  "name": "tripwire-checker",
+  "version": "0.1.0",
+  "description": "Tripwire checker: ALLOW/WARN/BLOCK before an agent or wallet pays or calls a NEAR account",
+  "scripts": {
+    "build": "tsc",
+    "check": "tsx src/cli.ts check",
+    "demo:rhea": "tsx examples/rhea-stake.ts",
+    "test": "tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@rhea-finance/rnear-sdk": "^0.1.1",
+    "near-api-js": "^7.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "type": "module",
+  "private": true,
+  "bin": {
+    "tripwire": "./dist/src/cli.js"
+  }
+}

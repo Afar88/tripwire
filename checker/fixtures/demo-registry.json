@@ -1,0 +1,33 @@
+{
+  "ref-flnance.testnet": {
+    "score": 90,
+    "level": "block",
+    "exists": true,
+    "flags": [
+      {
+        "reporter": "tripwire-reporter.testnet",
+        "category": "drainer",
+        "severity": 90,
+        "reason": "Impersonates Ref/Rhea; prompt-injected agents were told to send funds here",
+        "evidence_url": "https://github.com/Afar88/tripwire#demo-fixture",
+        "timestamp_ms": 1793530000000
+      }
+    ]
+  },
+  "lst-ref-dev.testnet": {
+    "score": 85,
+    "level": "block",
+    "exists": true,
+    "flags": [
+      {
+        "reporter": "tripwire-reporter.testnet",
+        "category": "lookalike",
+        "severity": 85,
+        "reason": "Fake rNEAR staking contract imitating lst.ref-dev.testnet",
+        "evidence_url": "https://github.com/Afar88/tripwire#demo-fixture",
+        "timestamp_ms": 1793530000000
+      }
+    ]
+  },
+  "ghost-wallet-x9.testnet": { "exists": false }
+}

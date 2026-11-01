@@ -1,0 +1,10 @@
+target/
+node_modules/
+dist/
+.env
+.env.*
+*.key
+*.pem
+**/credentials/
+.near-credentials/
+neardev/
