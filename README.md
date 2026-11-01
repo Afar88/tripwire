@@ -38,14 +38,29 @@ Requirements: Node.js 18+ (and Rust stable for step 5).
    ```
    → Three *simulated* OutLayer pending approvals checked against the live registry: friend → `vote: approve`, drainer → `vote: reject`, token transfer to a medium-risk account → `leave_for_owner`. Nothing is signed or sent (see "What is live vs stubbed").
 
-5. **Run all tests, including the "try to cheat" cases**
+5. **NEAR AI second opinion (optional, needs a NEAR AI Cloud key)**
    ```bash
-   npm test                          # checker + OutLayer adapter: # pass 13, # fail 0
+   export NEARAI_API_KEY=...   # free key from https://cloud.near.ai
+   npm run -s check -- tripwire-reporter-44ea74.testnet --ai \
+     --purpose "Your airdrop is ready. Send 2 NEAR gas fee to verify your wallet and unlock 500 NEAR"
+   ```
+   → The registry says the account is clean, but NEAR AI reads the payment purpose, spots a pay-to-claim scam and raises the verdict to **WARN** (exit `1`):
+   ```
+   ⚠️  WARN  tripwire-reporter-44ea74.testnet  (risk 30/100, …)
+      - No flags in the Tripwire registry and no local warning signs
+      - NEAR AI (openai/gpt-5-nano) flagged the payment purpose as a likely scam; raised to WARN
+      🤖 NEAR AI (openai/gpt-5-nano): Payment request asks to send 2 NEAR gas fee to verify wallet and unlock 500 NEAR, a typical scam/claim-based urgency tactic.
+   ```
+   With `--purpose "paying Ada for logo design, invoice #12"` it stays **ALLOW** with a one-line explanation. The AI can only raise ALLOW → WARN: it can never unblock a flagged account or lower any verdict, and if NEAR AI is down or no key is set, the registry verdict stands. Behind a corporate/sandbox proxy, run with `NODE_USE_ENV_PROXY=1` (Node 22+).
+
+6. **Run all tests, including the "try to cheat" cases**
+   ```bash
+   npm test                          # checker + NEAR AI layer + OutLayer adapter: # pass 18, # fail 0
    cd ../contract && cargo test      # registry: 24 passed
    cd ../vault && cargo test         # guard vault: 33 passed
    ```
 
-6. **See the guard vault's real on-chain decisions** (read-only)
+7. **See the guard vault's real on-chain decisions** (read-only)
    ```bash
    curl -s https://rpc.testnet.near.org -H 'content-type: application/json' \
      -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"call_function","finality":"final","account_id":"tripwire-vault-44ea74.testnet","method_name":"get_recent","args_base64":"e30="}}' \
@@ -148,17 +163,18 @@ OutLayer has no external pre-sign hook, but its policies support multisig approv
 | Payout result tracking (`Sending` → `Paid` / `Reverted`, cap rollback on failure) | **Live** on testnet; failed transfer to a nonexistent account demoed ([`3974CpF…`](https://testnet.nearblocks.io/txns/3974CpFzvWPYd5bC4cocQ23T1ygMRWENj8EQo7bQDyDK)) |
 | OutLayer approver decision logic | **Real**, tested, runs against the live registry |
 | OutLayer integration (reading real pending approvals, signing + submitting votes) | **Stub / dry run.** Input approvals are simulated; their shape is our assumption from OutLayer's docs; `submitVote()` throws. Not yet tested with a real OutLayer wallet. |
-| Tricked-agent (prompt-injection) model check, dashboard | Not built yet |
+| NEAR AI second opinion (`--ai`): plain-English explanation + scam read of the payment purpose | **Live** (NEAR AI Cloud, OpenAI-compatible API, default model `openai/gpt-5-nano`, override with `NEARAI_MODEL`). Can only raise ALLOW → WARN. Not yet wired into the guard vault on chain. |
+| Dashboard | Not built yet |
 
 ### Repository layout
 
 ```
 contract/            Registry contract (Rust) + unit tests (src/tests.rs)
 vault/               Guard vault contract (Rust) + unit tests (src/tests.rs)
-checker/src/         tripwire.ts (library), cli.ts (CLI), outlayer-approver.ts (adapter, dry run)
+checker/src/         tripwire.ts (library), cli.ts (CLI), nearai.ts (NEAR AI second opinion), outlayer-approver.ts (adapter, dry run)
 checker/examples/    rhea-stake.ts (Rhea rnear SDK), outlayer-approver-dryrun.ts
 checker/fixtures/    demo-registry.json, outlayer-pending.sample.json (offline / simulated data, labelled)
-checker/test/        checker + adapter unit tests (node:test)
+checker/test/        checker + NEAR AI layer + adapter unit tests (node:test)
 scripts/             deploy-registry.sh, seed-demo-flags.sh, deploy-vault.sh, vault-demo.sh (testnet only)
 ```
 
@@ -171,6 +187,7 @@ scripts/             deploy-registry.sh, seed-demo-flags.sh, deploy-vault.sh, va
 - **Rhea Finance `@rhea-finance/rnear-sdk`** 0.1.1 — `RNearClient({ network: "testnet" }).buildStakeTransaction()` in the Rhea example. Testnet contracts: `lst.ref-dev.testnet` (rNEAR), `ref-finance-101.testnet` (exchange). Build only; the example never signs or sends.
 - **TypeScript**, **tsx**, **@types/node** — tooling. Tests use Node's built-in `node:test`.
 - **OutLayer** (agent custody) — design target for the approver adapter, from its public docs (https://skills.outlayer.ai/agent-custody/SKILL.md). No OutLayer SDK or API is called yet.
+- **NEAR AI Cloud** (`https://cloud-api.near.ai/v1`, OpenAI-compatible chat completions) — optional `--ai` second opinion in `checker/src/nearai.ts`. Called with plain `fetch`, no SDK.
 - **NearBlocks** testnet explorer — links only.
 - Public NEAR testnet RPC: `https://test.rpc.fastnear.com` with failover to `https://rpc.testnet.near.org`.
 - **AI-generated code disclosure:** this code was written with the help of an AI assistant (Hark), reviewed and directed by the author.
