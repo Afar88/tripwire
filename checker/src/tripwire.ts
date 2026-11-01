@@ -44,6 +44,9 @@ export interface RegistrySource {
 export const BLOCK_AT = 70;
 export const WARN_AT = 1;
 
+/** The live Tripwire registry on NEAR testnet (deployed 2026-11-01). Override with TRIPWIRE_REGISTRY or --registry. */
+export const DEFAULT_TESTNET_REGISTRY = "tripwire-registry-44ea74.testnet";
+
 export const DEFAULT_TESTNET_RPCS = [
   "https://test.rpc.fastnear.com",
   "https://rpc.testnet.near.org",

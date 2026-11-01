@@ -6,20 +6,20 @@
  * 3. We then simulate a prompt-injected agent whose transaction was redirected to a fake
  *    staking contract, and show Tripwire blocking it.
  *
- * Registry: uses the live testnet registry when TRIPWIRE_REGISTRY is set, otherwise the
- * offline demo fixture (fixtures/demo-registry.json).
+ * Registry: the live testnet registry (tripwire-registry-44ea74.testnet, or TRIPWIRE_REGISTRY).
+ * Set TRIPWIRE_OFFLINE=1 to use the offline demo fixture (fixtures/demo-registry.json) instead.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { RNearClient } from "@rhea-finance/rnear-sdk";
-import { checkTransaction, FixtureRegistry, RpcRegistry, type RegistrySource, type TxLike } from "../src/tripwire.js";
+import { checkTransaction, FixtureRegistry, RpcRegistry, DEFAULT_TESTNET_REGISTRY, type RegistrySource, type TxLike } from "../src/tripwire.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const AGENT = process.env.AGENT_ACCOUNT ?? "tripwire-demo-agent.testnet";
+const AGENT = process.env.AGENT_ACCOUNT ?? "tripwire-agent-44ea74.testnet";
 
 function registry(): RegistrySource {
-  if (process.env.TRIPWIRE_REGISTRY) return new RpcRegistry(process.env.TRIPWIRE_REGISTRY);
+  if (process.env.TRIPWIRE_OFFLINE !== "1") return new RpcRegistry(process.env.TRIPWIRE_REGISTRY ?? DEFAULT_TESTNET_REGISTRY);
   const file = join(here, "..", "fixtures", "demo-registry.json");
   return new FixtureRegistry(JSON.parse(readFileSync(file, "utf8")), "offline demo fixture");
 }

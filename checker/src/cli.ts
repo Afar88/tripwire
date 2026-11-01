@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * tripwire check <account_id> [--registry <contract>] [--rpc <url>] [--fixture <file.json>] [--json]
+ * tripwire check <account_id> [--registry <contract> (default: live testnet registry)] [--rpc <url>] [--fixture <file.json>] [--json]
  *
  * Exit code: 0 = ALLOW, 1 = WARN, 2 = BLOCK, 3 = usage error.
  */
 import { readFileSync } from "node:fs";
-import { checkAccount, FixtureRegistry, RpcRegistry, DEFAULT_TESTNET_RPCS, type RegistrySource } from "./tripwire.js";
+import { checkAccount, FixtureRegistry, RpcRegistry, DEFAULT_TESTNET_RPCS, DEFAULT_TESTNET_REGISTRY, type RegistrySource } from "./tripwire.js";
 
 function arg(name: string): string | undefined {
   const i = process.argv.indexOf(`--${name}`);
@@ -15,11 +15,8 @@ function arg(name: string): string | undefined {
 export function registryFromArgs(): RegistrySource {
   const fixture = arg("fixture") ?? process.env.TRIPWIRE_FIXTURE;
   if (fixture) return new FixtureRegistry(JSON.parse(readFileSync(fixture, "utf8")), `fixture ${fixture}`);
-  const registryId = arg("registry") ?? process.env.TRIPWIRE_REGISTRY;
-  if (!registryId) {
-    console.error("No registry: pass --registry <testnet contract> (or TRIPWIRE_REGISTRY), or --fixture <file> for offline mode.");
-    process.exit(3);
-  }
+  // Default: the live testnet registry. --registry / TRIPWIRE_REGISTRY point elsewhere; --fixture works offline.
+  const registryId = arg("registry") ?? process.env.TRIPWIRE_REGISTRY ?? DEFAULT_TESTNET_REGISTRY;
   const rpc = arg("rpc") ?? process.env.NEAR_RPC_URL;
   return new RpcRegistry(registryId, rpc ? [rpc] : DEFAULT_TESTNET_RPCS);
 }
