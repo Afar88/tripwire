@@ -2,6 +2,8 @@
 
 Tripwire is **live on NEAR testnet**. Nothing below needs a wallet, a key or any NEAR: the checker only makes free read-only RPC calls.
 
+**Fastest: open https://tripwire-near.vercel.app** → tap an example (⛔ known drainer, ✅ real Rhea contract, 🎭 its lookalike, 🤖 clean account with a scam reason) → see ALLOW / WARN / BLOCK with reasons, read live from the registry contract below. The page is `web/` in this repo: a static page plus one read-only Vercel function (`web/api/check.js`, same rules as `checker/src`); the NEAR AI key stays server-side and AI calls are rate-limited.
+
 | What | Testnet account | Explorer |
 | --- | --- | --- |
 | Registry contract | `tripwire-registry-44ea74.testnet` | https://testnet.nearblocks.io/address/tripwire-registry-44ea74.testnet |

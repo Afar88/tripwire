@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tripwire · check a NEAR account before you pay</title>
+<meta name="description" content="Tripwire: an on-chain scam registry and guard vault for AI agents on NEAR. Paste an account, get ALLOW, WARN or BLOCK.">
+<meta property="og:title" content="Tripwire · check before you pay">
+<meta property="og:description" content="On-chain scam registry + guard vault for AI agents on NEAR. Live on testnet.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+<style>
+:root{--bg:#0b0d12;--card:#141823;--line:#252b3a;--txt:#e8ecf4;--mut:#8a93a8;--acc:#00ec97;--allow:#22c55e;--warn:#f59e0b;--block:#ef4444}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;background:var(--bg);color:var(--txt)}
+a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+.wrap{max-width:760px;margin:0 auto;padding:28px 18px 60px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:28px}
+.logo{font-weight:800;font-size:20px;letter-spacing:-.02em}.logo span{color:var(--acc)}
+.pill{font-size:12px;color:var(--mut);border:1px solid var(--line);border-radius:99px;padding:4px 10px}
+h1{font-size:clamp(28px,6vw,42px);line-height:1.1;letter-spacing:-.03em;margin:0 0 12px}
+.lead{color:var(--mut);margin:0 0 26px;font-size:17px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px}
+label{display:block;font-size:13px;color:var(--mut);margin:0 0 6px}
+input,textarea{width:100%;background:#0e1118;border:1px solid var(--line);border-radius:10px;color:var(--txt);font:inherit;padding:12px 14px;outline:none}
+input:focus,textarea:focus{border-color:var(--acc)}
+textarea{resize:vertical;min-height:64px}
+.row{margin-bottom:14px}
+.opt{font-size:12px;color:var(--mut)}
+button.go{width:100%;background:var(--acc);color:#04130c;border:0;border-radius:10px;padding:13px;font:700 16px/1 inherit;cursor:pointer}
+button.go:disabled{opacity:.6;cursor:wait}
+.ex{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 0}
+.ex button{background:transparent;border:1px solid var(--line);color:var(--txt);border-radius:99px;padding:7px 12px;font:13px inherit;cursor:pointer}
+.ex button:hover{border-color:var(--acc)}
+#out{margin-top:18px;display:none}
+.verdict{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+.badge{font-weight:800;font-size:22px;padding:8px 16px;border-radius:10px;letter-spacing:.02em}
+.ALLOW{background:rgba(34,197,94,.14);color:var(--allow)}.WARN{background:rgba(245,158,11,.14);color:var(--warn)}.BLOCK{background:rgba(239,68,68,.14);color:var(--block)}
+.meta{color:var(--mut);font-size:14px;word-break:break-all}
+ul.reasons{margin:8px 0 0;padding-left:20px}ul.reasons li{margin:4px 0}
+.ai{margin-top:14px;padding:12px 14px;border-left:3px solid var(--acc);background:#0e1118;border-radius:0 10px 10px 0;font-size:15px}
+.ai small{display:block;color:var(--mut);font-size:12px;margin-bottom:4px}
+.err{color:var(--block)}
+h2{font-size:20px;margin:40px 0 12px;letter-spacing:-.01em}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}
+.grid .card{padding:16px}.grid h3{margin:0 0 6px;font-size:15px}.grid p{margin:0;color:var(--mut);font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:14px}td{padding:8px 4px;border-bottom:1px solid var(--line);vertical-align:top}td:first-child{color:var(--mut);white-space:nowrap;padding-right:12px}
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;word-break:break-all}
+video{width:100%;border-radius:12px;border:1px solid var(--line);background:#000}
+footer{margin-top:44px;color:var(--mut);font-size:13px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">🛡️ Trip<span>wire</span></div>
+    <div class="pill">Live on NEAR testnet</div>
+  </header>
+
+  <h1>Check a NEAR account before anyone pays it.</h1>
+  <p class="lead">AI agents can now send money on their own. One poisoned prompt can swap the payee for a drainer. Tripwire asks an on-chain scam registry first and answers ALLOW, WARN or BLOCK, with reasons.</p>
+
+  <div class="card">
+    <form id="f" autocomplete="off">
+      <div class="row">
+        <label for="acc">NEAR account to pay or call</label>
+        <input id="acc" placeholder="e.g. tripwire-drainer-demo-44ea74.testnet" required spellcheck="false" autocapitalize="off">
+      </div>
+      <div class="row">
+        <label for="pur">Why is this payment happening? <span class="opt">(optional, NEAR AI reads it for scam patterns)</span></label>
+        <textarea id="pur" maxlength="300" placeholder="e.g. Paying Ada for logo design, invoice #12"></textarea>
+      </div>
+      <button class="go" id="go" type="submit">Check it</button>
+    </form>
+    <div class="ex">
+      <button data-a="tripwire-drainer-demo-44ea74.testnet" data-p="">⛔ Known drainer</button>
+      <button data-a="lst.ref-dev.testnet" data-p="">✅ Real Rhea staking contract</button>
+      <button data-a="lst-ref-dev.testnet" data-p="">🎭 Lookalike of it</button>
+      <button data-a="tripwire-reporter-44ea74.testnet" data-p="Your airdrop is ready. Send 2 NEAR gas fee to verify your wallet and unlock 500 NEAR">🤖 Clean account, scam reason</button>
+      <button data-a="tripwire-reporter-44ea74.testnet" data-p="Paying Ada for logo design, invoice #12">🧾 Clean account, normal invoice</button>
+    </div>
+    <div id="out"></div>
+  </div>
+
+  <h2>How it works</h2>
+  <div class="grid">
+    <div class="card"><h3>1 · Registry contract</h3><p>An on-chain list of flagged accounts. Anyone calls <code>get_risk</code>; trusted reporters file flags with a reason and evidence.</p></div>
+    <div class="card"><h3>2 · Checker</h3><p>Reads the registry over public RPC, adds lookalike-name and "account doesn't exist" checks, returns a verdict. Can't reach the registry? It warns, never silently allows.</p></div>
+    <div class="card"><h3>3 · Guard vault</h3><p>An agent's wallet that can only <em>request</em> spends. It enforces caps and asks the registry on chain: paid, blocked, or held for the owner. Failed transfers are refunded.</p></div>
+    <div class="card"><h3>4 · NEAR AI second opinion</h3><p>NEAR AI Cloud reads the payment's purpose. It can only raise ALLOW to WARN, never unblock anything.</p></div>
+  </div>
+
+  <h2>Watch the 70-second demo</h2>
+  <video controls preload="metadata" playsinline src="/tripwire-demo.mp4"></video>
+
+  <h2>On chain</h2>
+  <div class="card">
+    <table>
+      <tr><td>Registry</td><td><a href="https://testnet.nearblocks.io/address/tripwire-registry-44ea74.testnet" target="_blank" rel="noopener"><code>tripwire-registry-44ea74.testnet</code></a></td></tr>
+      <tr><td>Guard vault</td><td><a href="https://testnet.nearblocks.io/address/tripwire-vault-44ea74.testnet" target="_blank" rel="noopener"><code>tripwire-vault-44ea74.testnet</code></a></td></tr>
+      <tr><td>Reporter</td><td><a href="https://testnet.nearblocks.io/address/tripwire-reporter-44ea74.testnet" target="_blank" rel="noopener"><code>tripwire-reporter-44ea74.testnet</code></a></td></tr>
+      <tr><td>Source</td><td><a href="https://github.com/Afar88/tripwire" target="_blank" rel="noopener">github.com/Afar88/tripwire</a></td></tr>
+    </table>
+  </div>
+
+  <footer>Built at NEAR HACKATHON 2026 · read-only demo, nothing is signed or sent · demo accounts are labelled test data</footer>
+</div>
+<script>
+const $=s=>document.querySelector(s),out=$("#out"),go=$("#go");
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const icon={ALLOW:"✅",WARN:"⚠️",BLOCK:"⛔"};
+async function run(){
+  const account=$("#acc").value.trim(),purpose=$("#pur").value.trim();
+  if(!account)return;
+  go.disabled=true;go.textContent=purpose?"Checking registry + NEAR AI…":"Checking registry…";
+  out.style.display="block";out.innerHTML='<p class="meta">Asking the on-chain registry…</p>';
+  try{
+    const r=await fetch("/api/check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({account,purpose})});
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.error||"Check failed");
+    let h=`<div class="verdict"><div class="badge ${j.verdict}">${icon[j.verdict]} ${j.verdict}</div><div class="meta">risk ${j.score}/100<br><code>${esc(j.accountId)}</code></div></div>`;
+    h+='<ul class="reasons">'+j.reasons.map(x=>`<li>${esc(x)}</li>`).join("")+"</ul>";
+    if(j.ai)h+=`<div class="ai"><small>🤖 NEAR AI · ${esc(j.ai.model)}</small>${esc(j.ai.explanation)}</div>`;
+    if(j.aiError)h+=`<p class="meta">NEAR AI skipped: ${esc(j.aiError)}. The registry verdict stands.</p>`;
+    h+=`<p class="meta" style="margin-top:12px">Source: <code>${esc(j.registry)}</code></p>`;
+    out.innerHTML=h;
+  }catch(e){out.innerHTML=`<p class="err">${esc(e.message)}</p>`}
+  finally{go.disabled=false;go.textContent="Check it"}
+}
+$("#f").addEventListener("submit",e=>{e.preventDefault();run()});
+document.querySelectorAll(".ex button").forEach(b=>b.addEventListener("click",()=>{$("#acc").value=b.dataset.a;$("#pur").value=b.dataset.p;run()}));
+</script>
+</body>
+</html>

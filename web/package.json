@@ -1,0 +1,7 @@
+{
+  "name": "tripwire-web",
+  "private": true,
+  "type": "module",
+  "description": "Hosted Tripwire checker: static page + one serverless function. Read-only; never signs anything.",
+  "engines": { "node": ">=18" }
+}
