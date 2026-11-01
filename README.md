@@ -1,44 +1,71 @@
 # How to test in 2 minutes
 
-Requirements: Rust (stable, via rustup) and Node.js 18+. Everything below runs locally or against free public NEAR **testnet** RPC. Nothing is signed or sent.
+Tripwire is **live on NEAR testnet**. Nothing below needs a wallet, a key or any NEAR: the checker only makes free read-only RPC calls.
 
-1. **Run the contract's tests, including the "try to cheat" cases**
+| What | Testnet account | Explorer |
+| --- | --- | --- |
+| Registry contract | `tripwire-registry-44ea74.testnet` | https://testnet.nearblocks.io/address/tripwire-registry-44ea74.testnet |
+| Guard vault contract | `tripwire-vault-44ea74.testnet` | https://testnet.nearblocks.io/address/tripwire-vault-44ea74.testnet |
+| Reporter (files flags) | `tripwire-reporter-44ea74.testnet` | https://testnet.nearblocks.io/address/tripwire-reporter-44ea74.testnet |
+| Demo agent / owner | `tripwire-agent-44ea74.testnet` / `tripwire-owner-44ea74.testnet` | |
+| Demo "drainer" (test data) | `tripwire-drainer-demo-44ea74.testnet` | |
+
+Requirements: Node.js 18+ (and Rust stable for step 5).
+
+1. **Ask the live registry about a known-bad account**
    ```bash
-   cd contract && cargo test
+   cd checker && npm install
+   npm run -s check -- tripwire-drainer-demo-44ea74.testnet
    ```
-   → See `test result: ok. 24 passed`. Tests named `cheat_*` show that a non-reporter cannot flag, a scammer cannot unflag itself, a reporter cannot remove another reporter's flag or use owner powers, and outsiders cannot add reporters or take ownership.
+   → `⛔ BLOCK  tripwire-drainer-demo-44ea74.testnet  (risk 95/100, source: tripwire-registry-44ea74.testnet …)` with the reporter, reason and evidence link. Exit code `2`.
 
-2. **Install the checker and run its tests**
+2. **A clean account, and a medium-risk one**
    ```bash
-   cd ../checker && npm install && npm test
+   npm run -s check -- lst.ref-dev.testnet        # ✅ ALLOW (risk 0/100), exit 0
+   npm run -s check -- wrap-near-swap.testnet     # ⚠️ WARN (risk 40/100), exit 1
+   npm run -s check -- ref-flnance.testnet        # ⛔ BLOCK: registry flag + "account does not exist"
    ```
-   → See `# pass 7`, `# fail 0`.
 
-3. **Check a known-bad account (offline demo registry)**
-   ```bash
-   npm run -s check -- ref-flnance.testnet --fixture fixtures/demo-registry.json
-   ```
-   → See `⛔ BLOCK  ref-flnance.testnet  (risk 90/100 …)` with the reporter, reason and evidence link. Exit code is `2`.
-
-4. **Check a clean account**
-   ```bash
-   npm run -s check -- lst.ref-dev.testnet --fixture fixtures/demo-registry.json
-   ```
-   → See `✅ ALLOW … (risk 0/100 …)`. Exit code `0`.
-
-5. **Rhea example: guard a real rNEAR stake transaction**
+3. **Rhea example: guard a real rNEAR stake transaction**
    ```bash
    npm run -s demo:rhea
    ```
-   → The Rhea `rnear-sdk` builds a testnet stake transaction to `lst.ref-dev.testnet` (it reads the live testnet RPC), and Tripwire answers **ALLOW**. Then the same transaction, redirected by a simulated prompt injection to `lst-ref-dev.testnet`, gets **BLOCK** (registry flag + lookalike name). The script ends with `Summary: honest stake -> ALLOW, poisoned stake -> BLOCK`.
+   → The Rhea `rnear-sdk` builds a testnet stake transaction to `lst.ref-dev.testnet`; Tripwire answers **ALLOW**. The same transaction redirected by a simulated prompt injection to `lst-ref-dev.testnet` gets **BLOCK**. Ends with `Summary: honest stake -> ALLOW, poisoned stake -> BLOCK`. (Build only, never signed.)
 
-6. **Fail-safe against the live network**
+4. **OutLayer approver (dry run)**
    ```bash
-   npm run -s check -- friend.testnet --registry lst.ref-dev.testnet
+   npm run -s demo:outlayer
    ```
-   → Pointing the checker at a contract that is not a Tripwire registry gives `⚠️ WARN … Could not read the Tripwire registry … treat as unverified` (exit `1`). Tripwire never turns "I couldn't check" into ALLOW.
+   → Three *simulated* OutLayer pending approvals checked against the live registry: friend → `vote: approve`, drainer → `vote: reject`, token transfer to a medium-risk account → `leave_for_owner`. Nothing is signed or sent (see "What is live vs stubbed").
 
-> Status (Nov 1, 2026): the registry contract is built and tested locally. Testnet deployment is the next step; once deployed, replace `--fixture …` with `--registry <tripwire-contract>.testnet` in steps 3–4, or set `TRIPWIRE_REGISTRY` for step 5.
+5. **Run all tests, including the "try to cheat" cases**
+   ```bash
+   npm test                          # checker + OutLayer adapter: # pass 13, # fail 0
+   cd ../contract && cargo test      # registry: 24 passed
+   cd ../vault && cargo test         # guard vault: 24 passed
+   ```
+
+6. **See the guard vault's real on-chain decisions** (read-only)
+   ```bash
+   curl -s https://rpc.testnet.near.org -H 'content-type: application/json' \
+     -d '{"jsonrpc":"2.0","id":1,"method":"query","params":{"request_type":"call_function","finality":"final","account_id":"tripwire-vault-44ea74.testnet","method_name":"get_recent","args_base64":"e30="}}' \
+     | python3 -c "import sys,json; print(json.dumps(json.loads(bytes(json.load(sys.stdin)['result']['result'])), indent=1))"
+   ```
+   → Three requests the demo agent made on Nov 1, 2026: 0.5 NEAR to a clean account `Paid` (tx [`Ci3N1eb…`](https://testnet.nearblocks.io/txns/Ci3N1ebz8j3eraMjp1WDPUhxQP5iuBNKu3kf8d3WLx6S)), 0.5 NEAR to the demo drainer `Blocked` with `risk_score: 95` (tx [`EfsiaTb…`](https://testnet.nearblocks.io/txns/EfsiaTbkCjWF5iWobteRBWVaa6pFitjTyzy3TQpwXhCh)), 0.5 NEAR to a medium-risk account `Held`, then `Rejected` by the owner (txs [`C2jCMZY…`](https://testnet.nearblocks.io/txns/C2jCMZYYY3s3hKf2FRwwVrTFFgQ7MYBjvHqUJyh76xnk), [`5VGorUA…`](https://testnet.nearblocks.io/txns/5VGorUAMKsx6xgsZtkNpeBfzjEj22RVunbcLcFEJYQx6)).
+
+**Offline mode:** add `--fixture fixtures/demo-registry.json` to any `check`, or `TRIPWIRE_OFFLINE=1` for the Rhea demo. **Fail-safe:** `npm run -s check -- friend.testnet --registry lst.ref-dev.testnet` (not a registry) gives `⚠️ WARN … Could not read the Tripwire registry` — "couldn't check" is never ALLOW.
+
+### Deploy your own copy (free testnet NEAR)
+
+Install [near-cli-rs](https://github.com/near/near-cli-rs) and [cargo-near](https://github.com/near/cargo-near). Testnet accounts are funded for free by the faucet: `near account create-account sponsor-by-faucet-service <name>.testnet autogenerate-new-keypair save-to-legacy-keychain network-config testnet create` (the scripts below do this for you; a web faucet is also at https://near-faucet.io). Keys go to `~/.near-credentials`, never into this repo.
+
+```bash
+./scripts/deploy-registry.sh <suffix>   # registry + reporter accounts, build, deploy, add reporter
+./scripts/seed-demo-flags.sh <suffix>   # the labelled demo flags
+./scripts/deploy-vault.sh <suffix>      # vault + owner + agent, caps 1 NEAR/payment, 3 NEAR/day
+./scripts/vault-demo.sh <suffix>        # agent asks to pay: friend -> paid, drainer -> blocked, medium -> held
+export TRIPWIRE_REGISTRY=tripwire-registry-<suffix>.testnet
+```
 
 ---
 
@@ -46,9 +73,10 @@ Requirements: Rust (stable, via rustup) and Node.js 18+. Everything below runs l
 
 Tripwire is a wallet-agnostic scam / risk registry and checker for NEAR. Before an AI agent or a wallet sends funds to an account or calls a contract, it asks Tripwire, and gets back **ALLOW**, **WARN** or **BLOCK** with plain-English reasons.
 
-It has two parts:
+It has three parts:
 
 - **Registry contract** (Rust, `contract/`): an on-chain list of flagged accounts. Anyone can call `get_risk(account_id)`; trusted reporters file flags with a category, severity, reason, evidence URL and timestamp; the owner manages reporters and moderates.
+- **Guard vault** (Rust, `vault/`): a tiny wallet contract for an AI agent. The agent can only call `request_spend`; the vault checks caps and asks the registry before any NEAR leaves.
 - **Checker** (TypeScript, `checker/`): a library + CLI that reads the registry over public NEAR RPC, adds local signals (lookalike names, account does not exist), and returns a verdict. `checkTransaction()` checks every account a transaction touches (its receiver plus `receiver_id`/`account_id`-style arguments) before it is signed.
 
 ## The problem
@@ -84,22 +112,58 @@ AI agents on NEAR now hold real money. One poisoned web page or message can tell
 
 `score = max(registry score, local signals)`: lookalike of a well-known name → 60, account does not exist → 40, registry unreadable → 50. ≥70 BLOCK, ≥1 WARN, else ALLOW. CLI exit code 0/1/2 = ALLOW/WARN/BLOCK so it can gate scripts.
 
+### Guard vault (`vault/src/lib.rs`)
+
+The agent's only power is `request_spend(receiver_id, amount, memo)` (give it a function-call key limited to that method, or name its own account as `agent`). Flow:
+
+1. Local checks: caller is the agent, vault not frozen, amount ≤ per-payment cap, today's total ≤ daily cap, enough free balance, payee is not the vault, ≤ 20 payments waiting for the owner. The amount is reserved immediately, so parallel requests cannot slip past the caps.
+2. Cross-contract call `get_risk(receiver_id)` on the Tripwire registry.
+3. Callback `on_risk` (private): score 0 → pay; 1–69 → **Held** for the owner; ≥ 70 → **Blocked** (cap refunded); registry unreadable → **Held** (fail safe).
+
+Owner-only: `approve`, `reject`, `set_caps`, `set_agent`, `set_registry`, `freeze`/`unfreeze`, `withdraw` (cannot touch reserved funds). Views: `get_config`, `get_open`, `get_request`, `get_recent`, `free_balance`. Events: NEP-297-style `EVENT_JSON` with `standard: "tripwire-vault"`.
+
+Cheat tests (`vault/src/tests.rs`, `cheat_*`): stranger or owner calling `request_spend`, over per-payment cap, splitting payments past the daily cap, agent faking a "clean" registry answer, replayed callback, agent approving its own held payment, agent raising caps / withdrawing / swapping the registry / unfreezing, frozen vault, approving a request still being checked, spamming held requests, paying the vault itself, making the agent the owner, withdrawing reserved funds.
+
+Known limit: if a paid transfer fails on-chain (e.g. receiver deleted), NEAR refunds to the vault but the record still says `Paid`. The vault account keeps its deploy key on testnet for redeploys; in production you would remove it so only the owner methods control funds.
+
+### OutLayer adapter (`checker/src/outlayer-approver.ts`)
+
+OutLayer has no external pre-sign hook, but its policies support multisig approvers. Plan: a Tripwire-run NEAR account is one approver in the owner's OutLayer policy. For each pending operation Tripwire checks every account it touches and votes: ALLOW → approve, BLOCK → reject, WARN → no vote (the owner decides).
+
+### What is live vs stubbed
+
+| Piece | Status |
+| --- | --- |
+| Registry contract on testnet, reporter, 5 demo flags | **Live** (`tripwire-registry-44ea74.testnet`) |
+| Checker CLI/library reading the live registry | **Live** |
+| Rhea rNEAR example | **Live read** (real SDK, real testnet RPC); transactions are built, never signed |
+| Guard vault on testnet calling the registry before paying | **Live** (`tripwire-vault-44ea74.testnet`, real cross-contract calls, real testnet transfers) |
+| OutLayer approver decision logic | **Real**, tested, runs against the live registry |
+| OutLayer integration (reading real pending approvals, signing + submitting votes) | **Stub / dry run.** Input approvals are simulated; their shape is our assumption from OutLayer's docs; `submitVote()` throws. Not yet tested with a real OutLayer wallet. |
+| Tricked-agent (prompt-injection) model check, dashboard | Not built yet |
+
 ### Repository layout
 
 ```
-contract/            Rust NEAR contract + unit tests (src/tests.rs)
-checker/src/         tripwire.ts (library), cli.ts (CLI)
-checker/examples/    rhea-stake.ts (Rhea rnear SDK example)
-checker/fixtures/    demo-registry.json (offline demo data, clearly labelled)
-checker/test/        checker unit tests (node:test)
+contract/            Registry contract (Rust) + unit tests (src/tests.rs)
+vault/               Guard vault contract (Rust) + unit tests (src/tests.rs)
+checker/src/         tripwire.ts (library), cli.ts (CLI), outlayer-approver.ts (adapter, dry run)
+checker/examples/    rhea-stake.ts (Rhea rnear SDK), outlayer-approver-dryrun.ts
+checker/fixtures/    demo-registry.json, outlayer-pending.sample.json (offline / simulated data, labelled)
+checker/test/        checker + adapter unit tests (node:test)
+scripts/             deploy-registry.sh, seed-demo-flags.sh, deploy-vault.sh, vault-demo.sh (testnet only)
 ```
 
 ## Libraries, SDKs and partners used
 
-- **near-sdk** 5.30 (Rust) — contract.
+- **near-sdk** 5.30 (Rust) — registry and guard vault contracts (`store::IterableMap/IterableSet`, `ext_contract`, `Promise`, `#[callback_result]`).
+- **cargo-near** 0.22 — wasm build (`cargo near build non-reproducible-wasm`, wasm-opt post-step).
+- **near-cli-rs** 0.30 — testnet account creation via the faucet service, deploy, calls (scripts only).
 - **near-api-js** 7.4 — `JsonRpcProvider` view calls from the checker.
 - **Rhea Finance `@rhea-finance/rnear-sdk`** 0.1.1 — `RNearClient({ network: "testnet" }).buildStakeTransaction()` in the Rhea example. Testnet contracts: `lst.ref-dev.testnet` (rNEAR), `ref-finance-101.testnet` (exchange). Build only; the example never signs or sends.
 - **TypeScript**, **tsx**, **@types/node** — tooling. Tests use Node's built-in `node:test`.
+- **OutLayer** (agent custody) — design target for the approver adapter, from its public docs (https://skills.outlayer.ai/agent-custody/SKILL.md). No OutLayer SDK or API is called yet.
+- **NearBlocks** testnet explorer — links only.
 - Public NEAR testnet RPC: `https://test.rpc.fastnear.com` with failover to `https://rpc.testnet.near.org`.
 - **AI-generated code disclosure:** this code was written with the help of an AI assistant (Hark), reviewed and directed by the author.
 
@@ -107,7 +171,9 @@ All code in this repository was written during NEAR HACKATHON (from Nov 1, 2026)
 
 ## Network
 
-Tripwire is **testnet-only**. No mainnet deployment, no real funds. The demo fixture accounts (`ref-flnance.testnet`, `lst-ref-dev.testnet`, `ghost-wallet-x9.testnet`) are illustrative data for offline testing, not real accusations.
+Tripwire is **testnet-only**. No mainnet deployment, no real funds.
+
+<a id="demo-data"></a>**Demo data.** Every flag in the testnet registry starts with `DEMO/TEST DATA` and is seeded by `scripts/seed-demo-flags.sh`: `tripwire-drainer-demo-44ea74.testnet` (an account we created to play the drainer), `ref-flnance.testnet`, `lst-ref-dev.testnet`, `rhea-airdrop-claim.testnet` (lookalike / phishing-style names that did not exist on testnet when flagged) and `wrap-near-swap.testnet` (medium risk). They are illustrations, not accusations against real projects. Offline fixtures (`checker/fixtures/`) are labelled the same way.
 
 ## License
 
